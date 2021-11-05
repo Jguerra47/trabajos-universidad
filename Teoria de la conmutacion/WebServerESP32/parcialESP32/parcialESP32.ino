@@ -20,8 +20,6 @@ char teclas[4][4] ={
     {'7','8','9','C'},
     {'*','0','#','D'}
   }; 
-//byte pinesfilas[4] = {19,18,5,17}; 
-//byte pinescolumnas[4] = {23,4,3,2}; 
 
 byte pinesfilas[4] = {14,27,26,25};
 byte pinescolumnas[4] = {13,22,12,3};  
@@ -59,14 +57,6 @@ void setup() {
 
 // Variable to store the HTTP request
 String header;
-
-// Auxiliar variables to store the current output state
-String output26State = "off";
-String output27State = "off";
-
-// Assign output variables to GPIO pins
-const int output26 = 26;
-const int output27 = 27;
 
 // Current time
 unsigned long currentTime = millis();
