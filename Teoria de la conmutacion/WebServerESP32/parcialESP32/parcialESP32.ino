@@ -1,5 +1,11 @@
+/* Project: Comunicacion Servidor - Teclado con visualizacion en dos puertos
+ * By: Jacobo Rave and Juan Guerra
+ * Version: 1.3
+ */
+
 #include <Keypad.h> 
 #include <WiFi.h>
+#include <LiquidCrystal.h>
 
 const char* ssid = "SSID";
 const char* password = "PASSWORD";
@@ -14,14 +20,26 @@ char teclas[4][4] ={
     {'7','8','9','C'},
     {'*','0','#','D'}
   }; 
-byte pinesfilas[4] = {19,18,5,17};  
-byte pinescolumnas[4] = {23,22,3,21}; 
+//byte pinesfilas[4] = {19,18,5,17}; 
+//byte pinescolumnas[4] = {23,4,3,2}; 
+
+byte pinesfilas[4] = {14,27,26,25};
+byte pinescolumnas[4] = {13,22,12,3};  
+
 Keypad teclado = Keypad(makeKeymap(teclas), pinesfilas, pinescolumnas, 4,4);    
+LiquidCrystal lcd(19, 23, 18, 17, 16, 15);
+WiFiClient client;
+
 int t_inicial, t_actual, pos;
 char k, typeTemp;
-String msg;
+String msg, msgByServer;
+String last_msg;
 
 void setup() {
+  pinMode(4, OUTPUT);
+  pinMode(4, 0);
+  lcd.begin(16, 2);
+  
   Serial.begin(115200);
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -55,10 +73,10 @@ unsigned long currentTime = millis();
 // Previous time
 unsigned long previousTime = 0; 
 // Define timeout time in milliseconds (example: 2000ms = 2s)
-const long timeoutTime = 2000;
+const long timeoutTime = 10000;
 void loop(){
-  WiFiClient client = server.available();   // Listen for incoming clients
-
+  WiFiClient client = server.available();   // Listen for incoming clients 
+  
   if (client) {                             // If a new client connects,
     currentTime = millis();
     previousTime = currentTime;
@@ -80,25 +98,22 @@ void loop(){
             client.println("Content-type:text/html");
             client.println("Connection: close");
             client.println();
-            
-            // turns the GPIOs on and off            
-            if (header.indexOf("GET /26/on") >= 0) {
-              Serial.println("GPIO 26 on");
-              output26State = "on";
-              //digitalWrite(output26, HIGH);
-            } else if (header.indexOf("GET /26/off") >= 0) {
-              Serial.println("GPIO 26 off");
-              output26State = "off";
-              //digitalWrite(output26, LOW);
-            } else if (header.indexOf("GET /27/on") >= 0) {
-              Serial.println("GPIO 27 on");
-              output27State = "on";
-              //digitalWrite(output27, HIGH);
-            } else if (header.indexOf("GET /27/off") >= 0) {
-              Serial.println("GPIO 27 off");
-              output27State = "off";
-              //digitalWrite(output27, LOW);
+
+            int ind=header.indexOf("GET ?msgByServer=")+19;
+            msgByServer="";
+            while(header[ind]!=' '){
+              Serial.println("Analizando...");
+              Serial.println(ind);
+
+              if(header[ind]=='+'){
+                msgByServer = msgByServer + " ";
+              }else{
+                lcd.clear();
+                msgByServer = msgByServer + header[ind];  
+              }              
+              ind++;     
             }
+            
             
             // Display the HTML web page
             client.println("<!DOCTYPE html><html>");
@@ -106,34 +121,27 @@ void loop(){
             client.println("<link rel=\"icon\" href=\"data:,\">");
             // CSS to style the on/off buttons 
             // Feel free to change the background-color and font-size attributes to fit your preferences
+            //client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
             client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
             client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;");
             client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
             client.println(".button2 {background-color: #555555;}</style></head>");
             
             // Web Page Heading
+            String form_html = "";
+              form_html += "<form method = 'GET'>";
+              form_html += "<label for = 'msgByServer'>Mensaje a enviar </label>";
+              form_html += "<input type = 'text' value='' name='msgByServer'/>";
+              form_html += "<input type='submit' value='Send' />";
+              form_html += "</form>";
             client.println("<body><h1>ESP32 Web Server</h1>");
-            
-            // Display current state, and ON/OFF buttons for GPIO 26  
-            client.println("<p>GPIO 26 - State " + output26State + "</p>");
-            // If the output26State is off, it displays the ON button       
-            if (output26State=="off") {
-              client.println("<p><a href=\"/26/on\"><button class=\"button\">ON</button></a></p>");
-            } else {
-              client.println("<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>");
-            } 
-               
-            // Display current state, and ON/OFF buttons for GPIO 27  
-            client.println("<p>GPIO 27 - State " + output27State + "</p>");
-            // If the output27State is off, it displays the ON button       
-            if (output27State=="off") {
-              client.println("<p><a href=\"/27/on\"><button class=\"button\">ON</button></a></p>");
-            } else {
-              client.println("<p><a href=\"/27/off\"><button class=\"button button2\">OFF</button></a></p>");
-            }
-
+            //client.println("<p>Escribe un mensaje: <input></ input></p>");
             client.println("<p>Mensaje desde NodeMCU: " + msg+ "</p>");
-            client.println("</body></html>");
+            client.println(form_html);
+            client.println("</body>");
+            client.println("<meta http-equiv=\"refresh\" content=\"10\">");
+            
+            client.println("</html>");
             
             // The HTTP response ends with another blank line
             client.println();
@@ -155,13 +163,17 @@ void loop(){
     Serial.println("");
   }
   typing();
+  lcd.setCursor(0, 0);
+  lcd.print(msgByServer);
 }
 
-void typing(){  
+void typing(){
   //Si no hay entrada previa registrada, espera una lectura.
   if(k=='\0'){  
     k = waitRead(1000);
     if(k=='\0'){  
+      Serial.println(last_msg + " " + msg);
+      last_msg = last_msg == msg ? "-1" : last_msg;
       return;
     }
   }
@@ -181,14 +193,12 @@ void typing(){
     msg="";
     k='\0';
   }
-
-  //*: Actualizar mensaje en el servidor y limpiar (Pendiente)
-  //#: Ver mensaje que proviene de la página web (Pendiente)
   
   //Actualizar el mensaje con la entrada que se maneje desde handleInput()
   else{
     handleInput();
     msg = msg + interpret(typeTemp, pos);
+    last_msg = msg;
   }
   
   //Visualización del mensaje local
@@ -197,12 +207,6 @@ void typing(){
   }
 
 char interpret(int typeTemp, int pos){ 
-  /*
-  Serial.print("typeTemp-'0':");
-  Serial.println(typeTemp-'0');
-  Serial.print(" pos: ");
-  Serial.println(pos);
-  */
   if((typeTemp-'0')==5 && pos==2){
     return 'Ñ';
   }  
